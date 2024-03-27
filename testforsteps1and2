@@ -1,0 +1,92 @@
+// Step 1 - trim raw reads
+process trimReads {
+    tag "Step 1 - trim raw reads"
+    
+    // Inputs
+    input:
+    file('rawReads/*.cdgz') into rawReads
+    file('sampleID.txt') into sampleID
+    
+    // Output directory for trimmed reads
+    output:
+    file('trimmedReads/*') into trimmedReads
+    
+    script:
+    """
+    # Decompress raw reads
+    gunzip rawReads/*.cdgz
+    
+    # Check if programs are installed
+    cutadapt --version
+    perl FastQC/fastqc -v
+    
+    # Install Trim Galore
+    curl -fsSL https://github.com/FelixKrueger/TrimGalore/archive/0.6.6.tar.gz -o trim_galore.tar.gz 
+    tar xvzf trim_galore.tar.gz
+    
+    # Navigate to step 1 files
+    cd A01_trimmedReads
+    
+    # Run trimSubmit script
+    perl trimSubmitUTKData.pl
+    """
+}
+
+// Step 2 - nuclear assembly
+process nuclearAssembly {
+    tag "Step 2 - nuclear assembly"
+    
+    // Inputs
+    input:
+    file('sampleID.txt') into sampleID
+    
+    // Output directory for assembled sequences
+    output:
+    file('assembledSequences/*') into assembledSequences
+    
+    script:
+    """
+    # Copy sampleID.txt to assembly directory
+    cp sampleID.txt ../A02_nuclearAssembly
+    
+    # Check if programs are installed
+    chmod +x usearch
+    export PATH=$PATH:`pwd`/TrimGalore-0.6.6
+    export PATH=$PATH:`pwd`/FastQC
+    export PATH=$PATH:`pwd`/usearch11.0.667_i86osx32
+    export PATH=$PATH:`pwd`/usearch
+    export PATH=$PATH:`pwd`/Bridger.pl
+    
+    # Install usearch inside the container
+    gunzip usearch11.0.667_i86linux32.gz
+    chmod +x usearch11.0.667_i86linux32/Users/jbutle63/Documents/FissidensAnalyses2022_10_18/EnvironmentJRB/GoFlag_PipelineJRB2022/A01_trimmedReads
+    
+    # Install Bridger inside the container
+    tar zxvf Bridger_r2014-12-01.tar.gz 
+    chmod +x Bridger_r2014-12-01/Bridger.pl
+    
+    # Download docker image
+    docker pull --platform linux/i386 python
+    
+    # Create Dockerfile
+    cd ../container
+    cat > Dockerfile <<EOF
+    FROM python
+    WORKDIR .
+    COPY container/patch-from-doug A02_nuclearAssembly/IBA-doug.py A02_nuclearAssembly/mkIBAinput-doug.pl A02_nuclearAssembly/sampleID.txt container/usearch11.0.667_i86linux32 /root
+    RUN cd /root 
+    EOF
+    
+    # Build container
+    docker build --platform linux/i386 -t dougs-great-container-6core -f container/Dockerfile .
+    
+    # Run container
+    docker run -it -v /Users/jbutle63/Documents/FissidensAnalyses2022_10_18/EnvironmentJRB/GoFlag_PipelineJRB2022/A01_trimmedReads/:/runData -v $(pwd):/refData --platform linux/i386 dougs-great-container-6core /bin/bash 
+    
+    # Run mkIBAinput script
+    cd /root; perl ./mkIBAinput-doug.pl 2>&1 | tee for-doug.txt
+    
+    # Extract output files
+    # Do this outside of the Nextflow script
+    """
+}
