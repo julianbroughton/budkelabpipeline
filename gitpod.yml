@@ -1,0 +1,8 @@
+image:
+  file: .gitpod.Dockerfile
+
+tasks:
+  - init: |
+      wget -qO- https://get.nextflow.io | bash
+      sudo mv nextflow /usr/local/bin/
+    command: nextflow run main.nf
